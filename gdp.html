@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경제 지표 차트</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        canvas { 
+            max-width: 100%; 
+            width: 1000px; /* 차트 크기 */
+            height: 600px; /* 차트 높이 */
+            margin: 20px auto;
+        }
+        .checkbox-container { text-align: center; margin: 20px; }
+        .checkbox-container label { margin-right: 10px; }
+        .tab-container { margin: 20px; }
+        .tab-button { padding: 10px; margin: 0 5px; cursor: pointer; border: 1px solid #ccc; }
+        .tab-button.active { background-color: #4CAF50; color: white; }
+    </style>
+</head>
+<body>
+    <h1>📊 국가별 경제 지표</h1>
+
+    <div class="checkbox-container">
+        <label><input type="checkbox" class="country-checkbox" value="KR" checked> 한국</label>
+        <label><input type="checkbox" class="country-checkbox" value="US" checked> 미국</label>
+        <label><input type="checkbox" class="country-checkbox" value="CN" checked> 중국</label>
+        <label><input type="checkbox" class="country-checkbox" value="JP" checked> 일본</label>
+        <label><input type="checkbox" class="country-checkbox" value="AU" checked> 호주</label>
+        <label><input type="checkbox" class="country-checkbox" value="LA" checked> 라오스</label>
+        <label><input type="checkbox" class="country-checkbox" value="ID" checked> 인도네시아</label>
+    </div>
+
+    <div class="tab-container">
+        <button class="tab-button active" data-tab="GDP">경제 성장률 (GDP)</button>
+        <button class="tab-button" data-tab="INFLATION">인플레이션</button>
+        <button class="tab-button" data-tab="POVERTY">빈곤율</button>
+    </div>
+
+    <canvas id="growthChart"></canvas>
+
+    <script>
+        // 국가 코드 -> 국가명 매핑
+        const countryCodes = {
+            "KR": "한국",
+            "US": "미국",
+            "CN": "중국",
+            "JP": "일본",
+            "AU": "호주",
+            "LA": "라오스",
+            "ID": "인도네시아"
+        };
+
+        // World Bank API URL (GDP, 인플레이션, 빈곤율)
+        const apiUrls = {
+            "GDP": (code) => `https://api.worldbank.org/v2/country/${code}/indicator/NY.GDP.MKTP.KD.ZG?format=json`,
+            "INFLATION": (code) => `https://api.worldbank.org/v2/country/${code}/indicator/FP.CPI.TOTL.ZG?format=json`,
+            "POVERTY": (code) => `https://api.worldbank.org/v2/country/${code}/indicator/SI.POV.DDAY?format=json`
+        };
+
+        let chart;
+        let selectedIndicator = "GDP"; // 기본 선택은 GDP
+
+        // 데이터 가져오기
+        async function fetchEconomicData() {
+            const selectedCountries = Array.from(document.querySelectorAll('.country-checkbox:checked'))
+                                           .map(checkbox => checkbox.value);
+
+            const data = {};
+
+            // 각 나라별로 API 호출
+            for (let code of selectedCountries) {
+                const response = await fetch(apiUrls[selectedIndicator](code));
+                const json = await response.json();
+                
+                if (json[1]) {
+                    // 나라별 데이터 저장
+                    data[countryCodes[code]] = json[1].map(entry => ({
+                        year: entry.date,
+                        value: entry.value
+                    }));
+                }
+            }
+            return data;
+        }
+
+        // 차트 생성 함수
+        function createChart() {
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '지표 값' }
+                        },
+                        x: {
+                            title: { display: true, text: '연도' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 차트 업데이트 함수
+        function updateChart(data) {
+            const labels = Object.values(data).length > 0 && Object.values(data)[0]
+                            ? Object.values(data)[0].map(entry => entry.year).reverse()
+                            : [];
+
+            chart.data.labels = labels;
+
+            chart.data.datasets = [];
+            Object.keys(data).forEach(country => {
+                chart.data.datasets.push({
+                    label: `${country} - ${selectedIndicator}`,
+                    data: data[country].map(entry => entry.value).reverse(),
+                    borderColor: getColor(country),
+                    fill: false,
+                    tension: 0.1 // 곡선 효과
+                });
+            });
+
+            chart.update();
+        }
+
+        // 국가별 색상 지정
+        function getColor(country) {
+            const colors = {
+                "한국": "blue", "미국": "red", "중국": "green", "일본": "purple",
+                "호주": "orange", "라오스": "brown", "인도네시아": "pink"
+            };
+            return colors[country] || "gray";
+        }
+
+        // 탭 변경 기능
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', async (event) => {
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                event.target.classList.add('active');
+
+                selectedIndicator = event.target.getAttribute('data-tab'); // 선택한 지표 업데이트
+                const data = await fetchEconomicData();
+                updateChart(data);
+            });
+        });
+
+        // 체크박스 변경 감지
+        document.querySelectorAll('.country-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', async () => {
+                const data = await fetchEconomicData();
+                updateChart(data);
+            });
+        });
+
+        // 페이지 로드 시 초기 데이터 로드
+        document.addEventListener('DOMContentLoaded', async () => {
+            createChart();
+            const data = await fetchEconomicData();
+            updateChart(data);
+        });
+    </script>
+</body>
+</html>
